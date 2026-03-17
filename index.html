@@ -2,56 +2,46 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Solana Wallet Clean</title>
 
 <script src="https://cdn.jsdelivr.net/npm/@solana/web3.js@latest/lib/index.iife.min.js"></script>
 
 <style>
 body{
   margin:0;
-  font-family:sans-serif;
+  font-family:-apple-system;
   background:#0d0d0f;
   color:white;
 }
 
 .header{
-  padding:25px;
-}
-
-.wallet{
-  font-size:12px;
-  opacity:0.6;
-  cursor:pointer;
+  padding:30px;
+  background:linear-gradient(180deg,#1e4638,#0d0d0f);
+  text-align:center;
 }
 
 .balance{
-  font-size:36px;
-  margin-top:10px;
+  font-size:40px;
 }
 
-button{
-  margin:10px;
-  padding:10px 15px;
-  border:none;
-  border-radius:10px;
-  background:#7c4dff;
-  color:white;
+.actions{
+  display:flex;
+  justify-content:space-around;
+  margin-top:20px;
 }
 
-input{
-  display:block;
-  margin:10px;
-  padding:10px;
-  width:90%;
-  border-radius:10px;
-  border:none;
+.btn{
+  background:#6c4cff;
+  padding:12px 20px;
+  border-radius:20px;
 }
 
 .token{
-  background:#1a1a1d;
   margin:10px;
-  padding:10px;
-  border-radius:10px;
+  padding:15px;
+  border-radius:16px;
+  background:#1a1a1d;
+  display:flex;
+  justify-content:space-between;
 }
 </style>
 </head>
@@ -59,134 +49,103 @@ input{
 <body>
 
 <div class="header">
-  <div class="wallet" onclick="connect()">Connect Wallet</div>
+  <div onclick="connect()">Connect</div>
   <div class="balance">$0.00</div>
+
+  <div class="actions">
+    <div class="btn" onclick="swap()">Swap</div>
+    <div class="btn" onclick="send()">Send</div>
+  </div>
 </div>
-
-<button onclick="refresh()">Refresh</button>
-
-<input id="to" placeholder="Recipient address">
-<input id="amount" placeholder="Amount (SOL)">
-
-<button onclick="send()">Send SOL</button>
 
 <div id="tokens"></div>
 
 <script>
-const { Connection, PublicKey, SystemProgram, Transaction } = solanaWeb3;
+const { Connection, PublicKey, Transaction } = solanaWeb3;
 
 const connection = new Connection("https://api.mainnet-beta.solana.com");
 
 let wallet = null;
+let prices = {};
+
+// 🔥 PRICE API
+async function loadPrices(){
+  const res = await fetch(
+    "https://api.coingecko.com/api/v3/simple/price?ids=solana,ethereum&vs_currencies=usd"
+  );
+  prices = await res.json();
+}
 
 // CONNECT
 async function connect(){
-  if(!window.solana){
-    alert("Use Phantom browser");
-    return;
-  }
+  const res = await window.solana.connect();
+  wallet = res.publicKey;
 
-  try{
-    const res = await window.solana.connect();
-    wallet = res.publicKey;
-
-    document.querySelector(".wallet").innerText =
-      wallet.toString().slice(0,4)+"..."+wallet.toString().slice(-4);
-
-    refresh();
-
-  }catch(e){
-    alert("Connection failed");
-  }
+  await loadPrices();
+  loadAll();
 }
 
-// REFRESH ALL
-async function refresh(){
-  if(!wallet) return;
+// LOAD
+async function loadAll(){
+  const lamports = await connection.getBalance(wallet);
+  const sol = lamports / 1e9;
 
-  await loadBalance();
-  await loadTokens();
+  const usd = sol * prices.solana.usd;
+
+  document.querySelector(".balance").innerText =
+    "$" + usd.toFixed(2);
+
+  render("Solana", sol, usd);
 }
 
-// LOAD BALANCE
-async function loadBalance(){
-  try{
-    const lamports = await connection.getBalance(wallet);
-    const sol = lamports / 1e9;
-
-    document.querySelector(".balance").innerText =
-      sol.toFixed(4) + " SOL";
-
-  }catch(e){
-    console.log(e);
-  }
+// RENDER
+function render(name, amount, usd){
+  document.getElementById("tokens").innerHTML = `
+    <div class="token">
+      <div>${name}</div>
+      <div>$${usd.toFixed(2)}</div>
+    </div>`;
 }
 
-// LOAD TOKENS
-async function loadTokens(){
-  document.getElementById("tokens").innerHTML = "";
+// 🔥 SWAP (JUPITER)
+async function swap(){
+  if(!wallet) return alert("connect first");
 
-  try{
-    const res = await connection.getParsedTokenAccountsByOwner(
-      wallet,
-      { programId: new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA") }
-    );
+  const amount = prompt("SOL amount:");
 
-    res.value.forEach(t=>{
-      const info = t.account.data.parsed.info;
-      const amount = info.tokenAmount.uiAmount;
+  // 1️⃣ GET QUOTE
+  const quote = await fetch(
+    `https://quote-api.jup.ag/v6/quote?inputMint=So11111111111111111111111111111111111111112&outputMint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGk5rX2hP&amount=${amount*1e9}&slippageBps=50`
+  ).then(r=>r.json());
 
-      if(amount > 0){
-        document.getElementById("tokens").innerHTML += `
-        <div class="token">
-          ${info.mint} <br>
-          ${amount}
-        </div>`;
-      }
-    });
-
-  }catch(e){
-    console.log(e);
-  }
-}
-
-// SEND SOL
-async function send(){
-  if(!wallet){
-    alert("Connect first");
-    return;
-  }
-
-  const to = document.getElementById("to").value;
-  const amount = parseFloat(document.getElementById("amount").value);
-
-  if(!to || !amount){
-    alert("Fill all fields");
-    return;
-  }
-
-  try{
-    const tx = new Transaction().add(
-      SystemProgram.transfer({
-        fromPubkey: wallet,
-        toPubkey: new PublicKey(to),
-        lamports: amount * 1e9
+  // 2️⃣ GET TX
+  const swapTx = await fetch(
+    "https://quote-api.jup.ag/v6/swap",
+    {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body:JSON.stringify({
+        quoteResponse: quote,
+        userPublicKey: wallet.toString(),
+        wrapAndUnwrapSol:true
       })
-    );
+    }
+  ).then(r=>r.json());
 
-    tx.feePayer = wallet;
-    tx.recentBlockhash =
-      (await connection.getLatestBlockhash()).blockhash;
+  // 3️⃣ SIGN & SEND
+  const tx = solanaWeb3.Transaction.from(
+    Uint8Array.from(atob(swapTx.swapTransaction), c=>c.charCodeAt(0))
+  );
 
-    const signed = await window.solana.signTransaction(tx);
-    const sig = await connection.sendRawTransaction(signed.serialize());
+  const signed = await window.solana.signTransaction(tx);
+  const sig = await connection.sendRawTransaction(signed.serialize());
 
-    alert("Success: " + sig);
+  alert("Swap success: " + sig);
+}
 
-  }catch(e){
-    alert("Transaction failed");
-    console.log(e);
-  }
+// SEND
+async function send(){
+  alert("Use previous send logic");
 }
 </script>
 

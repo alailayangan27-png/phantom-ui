@@ -2,81 +2,56 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Phantom Ultimate dApp</title>
+<title>Solana Wallet Clean</title>
 
 <script src="https://cdn.jsdelivr.net/npm/@solana/web3.js@latest/lib/index.iife.min.js"></script>
 
 <style>
-body {
+body{
   margin:0;
-  font-family:-apple-system;
+  font-family:sans-serif;
   background:#0d0d0f;
   color:white;
 }
 
-/* HEADER */
-.header {
-  padding:30px 20px;
-  background:linear-gradient(180deg,#1a3f34,#0d0d0f);
+.header{
+  padding:25px;
 }
 
-.wallet {
-  font-size:13px;
+.wallet{
+  font-size:12px;
   opacity:0.6;
   cursor:pointer;
 }
 
-.balance {
-  font-size:40px;
+.balance{
+  font-size:36px;
   margin-top:10px;
 }
 
-/* ACTIONS */
-.actions {
-  display:flex;
-  justify-content:space-around;
-  padding:20px;
+button{
+  margin:10px;
+  padding:10px 15px;
+  border:none;
+  border-radius:10px;
+  background:#7c4dff;
+  color:white;
 }
 
-.circle {
-  width:55px;
-  height:55px;
-  border-radius:50%;
-  background:linear-gradient(135deg,#5f2eea,#8a63ff);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-}
-
-/* INPUT */
-.input {
-  width:90%;
-  margin:5px auto;
+input{
+  display:block;
+  margin:10px;
   padding:10px;
+  width:90%;
   border-radius:10px;
   border:none;
-  display:block;
 }
 
-/* TOKENS */
-.token {
+.token{
   background:#1a1a1d;
   margin:10px;
-  padding:15px;
-  border-radius:15px;
-  display:flex;
-  justify-content:space-between;
-}
-
-/* NAV */
-.nav {
-  position:fixed;
-  bottom:0;
-  width:100%;
-  background:#1a1a1d;
-  display:flex;
-  justify-content:space-around;
   padding:10px;
+  border-radius:10px;
 }
 </style>
 </head>
@@ -84,12 +59,136 @@ body {
 <body>
 
 <div class="header">
-  <div class="wallet" onclick="connectWallet()">Tap to Connect</div>
+  <div class="wallet" onclick="connect()">Connect Wallet</div>
   <div class="balance">$0.00</div>
 </div>
 
-<div class="actions">
-  <div class="circle" onclick="sendSol()">⬆️</div>
-  <div class="circle" onclick="sendToken()">🪙</div>
-  <div class="circle" onclick="swapToken()">🔄</div>
-  <div class="circle" onclick="receive()">⬇️</
+<button onclick="refresh()">Refresh</button>
+
+<input id="to" placeholder="Recipient address">
+<input id="amount" placeholder="Amount (SOL)">
+
+<button onclick="send()">Send SOL</button>
+
+<div id="tokens"></div>
+
+<script>
+const { Connection, PublicKey, SystemProgram, Transaction } = solanaWeb3;
+
+const connection = new Connection("https://api.mainnet-beta.solana.com");
+
+let wallet = null;
+
+// CONNECT
+async function connect(){
+  if(!window.solana){
+    alert("Use Phantom browser");
+    return;
+  }
+
+  try{
+    const res = await window.solana.connect();
+    wallet = res.publicKey;
+
+    document.querySelector(".wallet").innerText =
+      wallet.toString().slice(0,4)+"..."+wallet.toString().slice(-4);
+
+    refresh();
+
+  }catch(e){
+    alert("Connection failed");
+  }
+}
+
+// REFRESH ALL
+async function refresh(){
+  if(!wallet) return;
+
+  await loadBalance();
+  await loadTokens();
+}
+
+// LOAD BALANCE
+async function loadBalance(){
+  try{
+    const lamports = await connection.getBalance(wallet);
+    const sol = lamports / 1e9;
+
+    document.querySelector(".balance").innerText =
+      sol.toFixed(4) + " SOL";
+
+  }catch(e){
+    console.log(e);
+  }
+}
+
+// LOAD TOKENS
+async function loadTokens(){
+  document.getElementById("tokens").innerHTML = "";
+
+  try{
+    const res = await connection.getParsedTokenAccountsByOwner(
+      wallet,
+      { programId: new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA") }
+    );
+
+    res.value.forEach(t=>{
+      const info = t.account.data.parsed.info;
+      const amount = info.tokenAmount.uiAmount;
+
+      if(amount > 0){
+        document.getElementById("tokens").innerHTML += `
+        <div class="token">
+          ${info.mint} <br>
+          ${amount}
+        </div>`;
+      }
+    });
+
+  }catch(e){
+    console.log(e);
+  }
+}
+
+// SEND SOL
+async function send(){
+  if(!wallet){
+    alert("Connect first");
+    return;
+  }
+
+  const to = document.getElementById("to").value;
+  const amount = parseFloat(document.getElementById("amount").value);
+
+  if(!to || !amount){
+    alert("Fill all fields");
+    return;
+  }
+
+  try{
+    const tx = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: wallet,
+        toPubkey: new PublicKey(to),
+        lamports: amount * 1e9
+      })
+    );
+
+    tx.feePayer = wallet;
+    tx.recentBlockhash =
+      (await connection.getLatestBlockhash()).blockhash;
+
+    const signed = await window.solana.signTransaction(tx);
+    const sig = await connection.sendRawTransaction(signed.serialize());
+
+    alert("Success: " + sig);
+
+  }catch(e){
+    alert("Transaction failed");
+    console.log(e);
+  }
+}
+</script>
+
+</body>
+</html>

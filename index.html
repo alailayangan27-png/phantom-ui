@@ -13,28 +13,25 @@ body{
   color:white;
 }
 
-/* HEADER */
 .header{
-  padding:30px 20px;
-  background:linear-gradient(180deg,#1e4638,#0d0d0f);
+  padding:30px;
   text-align:center;
+  background:linear-gradient(180deg,#1e4638,#0d0d0f);
 }
 
 .wallet{
-  font-size:14px;
   opacity:0.7;
   cursor:pointer;
 }
 
 .balance{
-  font-size:42px;
-  margin:10px 0;
+  font-size:40px;
+  margin:10px;
 }
 
 .actions{
   display:flex;
   justify-content:space-around;
-  margin-top:20px;
 }
 
 .btn{
@@ -43,35 +40,15 @@ body{
   border-radius:20px;
 }
 
-/* TOKENS */
 .token{
   margin:10px;
   padding:15px;
-  border-radius:16px;
   background:#1a1a1d;
+  border-radius:16px;
   display:flex;
   justify-content:space-between;
-  align-items:center;
 }
 
-.token-left{
-  display:flex;
-  gap:10px;
-  align-items:center;
-}
-
-/* NAV */
-.nav{
-  position:fixed;
-  bottom:0;
-  width:100%;
-  background:#1a1a1d;
-  display:flex;
-  justify-content:space-around;
-  padding:10px;
-}
-
-/* MODAL */
 .modal{
   display:none;
   position:fixed;
@@ -84,8 +61,8 @@ body{
   bottom:0;
   width:100%;
   background:#1a1a1d;
-  border-radius:20px 20px 0 0;
   padding:20px;
+  border-radius:20px;
 }
 </style>
 </head>
@@ -93,7 +70,7 @@ body{
 <body>
 
 <div class="header">
-  <div class="wallet" onclick="connect()">Connect</div>
+  <div class="wallet" onclick="connect()">Connect Wallet</div>
   <div class="balance">$0.00</div>
 
   <div class="actions">
@@ -105,12 +82,12 @@ body{
 
 <div id="tokens"></div>
 
-<div class="nav">
-  <div>💰</div>
-  <div>📊</div>
-  <div>🔄</div>
-  <div>⚡</div>
-  <div>🌐</div>
+<!-- DASHBOARD -->
+<div style="padding:15px;">
+  <h3>📊 Profit Dashboard</h3>
+  <div class="token"><div>Total Volume</div><div id="vol">$0</div></div>
+  <div class="token"><div>Total Fee</div><div id="fee">$0</div></div>
+  <div class="token"><div>Total Transactions</div><div id="tx">0</div></div>
 </div>
 
 <!-- SWAP MODAL -->
@@ -118,38 +95,27 @@ body{
   <div class="modal-content">
     <h3>Swap</h3>
 
-    <div>
-      <div>From (SOL)</div>
-      <input id="amount" type="number" placeholder="0.0"
-        style="width:100%; padding:10px; border-radius:10px;">
-    </div>
+    <input id="amount" placeholder="Amount (SOL)"
+      style="width:100%; padding:10px; border-radius:10px;">
 
-    <br>
-
-    <div>
-      <div>To (USDC)</div>
-      <div style="opacity:0.7;">Auto</div>
-    </div>
-
-    <br>
+    <br><br>
 
     <button onclick="executeSwap()" style="
       width:100%;
       padding:15px;
       background:#6c4cff;
       border:none;
-      border-radius:20px;
       color:white;
-    ">Swap Now</button>
+      border-radius:20px;
+    ">Execute Swap</button>
+
+    <br><br>
 
     <button onclick="closeSwap()" style="
       width:100%;
       padding:10px;
-      margin-top:10px;
-      background:#333;
       border:none;
       border-radius:20px;
-      color:white;
     ">Cancel</button>
   </div>
 </div>
@@ -159,37 +125,37 @@ const { Connection, PublicKey, SystemProgram, Transaction } = solanaWeb3;
 
 const connection = new Connection("https://api.mainnet-beta.solana.com");
 
+// 🔥 EDIT THIS
+const FEE_ACCOUNT = "YOUR_WALLET_ADDRESS";
+
 let wallet = null;
 let solPrice = 0;
 
-// PRICE
+let history = JSON.parse(localStorage.getItem("swapHistory") || "[]");
+
+// GET SOL PRICE
 async function getPrice(){
   const res = await fetch(
     "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd"
   );
-  const data = await res.json();
-  solPrice = data.solana.usd;
+  solPrice = (await res.json()).solana.usd;
 }
 
-// CONNECT
+// CONNECT WALLET
 async function connect(){
-  if(!window.solana){
-    alert("Open in Phantom browser");
-    return;
-  }
-
   const res = await window.solana.connect();
   wallet = res.publicKey;
 
   document.querySelector(".wallet").innerText =
-    wallet.toString().slice(0,4)+"..."+wallet.toString().slice(-4);
+    wallet.toString().slice(0,4) + "...";
 
   await getPrice();
-  loadAll();
+  loadBalance();
+  updateDashboard();
 }
 
-// LOAD
-async function loadAll(){
+// LOAD BALANCE
+async function loadBalance(){
   const lamports = await connection.getBalance(wallet);
   const sol = lamports / 1e9;
   const usd = sol * solPrice;
@@ -197,102 +163,40 @@ async function loadAll(){
   document.querySelector(".balance").innerText =
     "$" + usd.toFixed(2);
 
-  renderSol(sol, usd);
-  loadTokens();
+  document.getElementById("tokens").innerHTML =
+    `<div class="token"><div>SOL</div><div>${sol.toFixed(3)}</div></div>`;
 }
 
-// SOL CARD
-function renderSol(sol, usd){
-  document.getElementById("tokens").innerHTML = `
-  <div class="token">
-    <div class="token-left">
-      <div>🟣</div>
-      <div>
-        <div>Solana</div>
-        <div>${sol.toFixed(3)} SOL</div>
-      </div>
-    </div>
-    <div>$${usd.toFixed(2)}</div>
-  </div>`;
-}
+// SEND SOL
+async function send(){
+  const to = prompt("Recipient address:");
+  const amount = parseFloat(prompt("Amount (SOL):"));
 
-// TOKEN LIST
-async function loadTokens(){
-  const res = await connection.getParsedTokenAccountsByOwner(
-    wallet,
-    { programId: new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA") }
+  const tx = new Transaction().add(
+    SystemProgram.transfer({
+      fromPubkey: wallet,
+      toPubkey: new PublicKey(to),
+      lamports: amount * 1e9
+    })
   );
 
-  res.value.forEach(t=>{
-    const info = t.account.data.parsed.info;
-    const amount = info.tokenAmount.uiAmount;
+  tx.feePayer = wallet;
+  tx.recentBlockhash =
+    (await connection.getLatestBlockhash()).blockhash;
 
-    if(amount > 0){
-      document.getElementById("tokens").innerHTML += `
-      <div class="token">
-        <div class="token-left">
-          <div>🪙</div>
-          <div>
-            <div>Token</div>
-            <div>${amount}</div>
-          </div>
-        </div>
-        <div>-</div>
-      </div>`;
-    }
-  });
-}
+  const signed = await window.solana.signTransaction(tx);
+  const sig = await connection.sendRawTransaction(signed.serialize());
 
-// SEND
-async function send(){
-  if(!wallet){
-    alert("Connect first");
-    return;
-  }
-
-  const to = prompt("Recipient address:");
-  const amount = parseFloat(prompt("Amount SOL:"));
-
-  if(!to || !amount) return;
-
-  try{
-    const tx = new Transaction().add(
-      SystemProgram.transfer({
-        fromPubkey: wallet,
-        toPubkey: new PublicKey(to),
-        lamports: amount * 1e9
-      })
-    );
-
-    tx.feePayer = wallet;
-    tx.recentBlockhash =
-      (await connection.getLatestBlockhash()).blockhash;
-
-    const signed = await window.solana.signTransaction(tx);
-    const sig = await connection.sendRawTransaction(signed.serialize());
-
-    alert("✅ Sent: " + sig);
-
-  }catch(e){
-    alert("❌ Send failed");
-  }
+  alert("Sent: " + sig);
 }
 
 // RECEIVE
 function receive(){
-  if(!wallet){
-    alert("Connect first");
-    return;
-  }
   alert(wallet.toString());
 }
 
 // SWAP UI
 function swap(){
-  if(!wallet){
-    alert("Connect first");
-    return;
-  }
   document.getElementById("swapModal").style.display = "block";
 }
 
@@ -300,43 +204,69 @@ function closeSwap(){
   document.getElementById("swapModal").style.display = "none";
 }
 
-// SWAP EXECUTE
+// SAVE SWAP DATA
+function saveSwap(amount){
+  const fee = amount * 0.003;
+
+  history.push({ amount, fee });
+
+  localStorage.setItem("swapHistory", JSON.stringify(history));
+  updateDashboard();
+}
+
+// UPDATE DASHBOARD
+function updateDashboard(){
+  let volume = 0;
+  let fee = 0;
+
+  history.forEach(h=>{
+    volume += h.amount;
+    fee += h.fee;
+  });
+
+  document.getElementById("vol").innerText =
+    "$" + (volume * solPrice).toFixed(2);
+
+  document.getElementById("fee").innerText =
+    "$" + (fee * solPrice).toFixed(2);
+
+  document.getElementById("tx").innerText =
+    history.length;
+}
+
+// EXECUTE SWAP
 async function executeSwap(){
   const amount = parseFloat(document.getElementById("amount").value);
-  if(!amount) return alert("Enter amount");
 
-  try{
-    const quote = await fetch(
-      `https://quote-api.jup.ag/v6/quote?inputMint=So11111111111111111111111111111111111111112&outputMint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGk5rX2hP&amount=${amount*1e9}&slippageBps=50`
-    ).then(r=>r.json());
+  const quote = await fetch(
+    `https://quote-api.jup.ag/v6/quote?inputMint=So11111111111111111111111111111111111111112&outputMint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGk5rX2hP&amount=${amount*1e9}&slippageBps=50&feeBps=30`
+  ).then(r=>r.json());
 
-    const swapTx = await fetch(
-      "https://quote-api.jup.ag/v6/swap",
-      {
-        method:"POST",
-        headers:{ "Content-Type":"application/json" },
-        body:JSON.stringify({
-          quoteResponse: quote,
-          userPublicKey: wallet.toString(),
-          wrapAndUnwrapSol:true
-        })
-      }
-    ).then(r=>r.json());
+  const swapTx = await fetch(
+    "https://quote-api.jup.ag/v6/swap",
+    {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body:JSON.stringify({
+        quoteResponse: quote,
+        userPublicKey: wallet.toString(),
+        wrapAndUnwrapSol: true,
+        feeAccount: FEE_ACCOUNT
+      })
+    }
+  ).then(r=>r.json());
 
-    const tx = solanaWeb3.Transaction.from(
-      Uint8Array.from(atob(swapTx.swapTransaction), c=>c.charCodeAt(0))
-    );
+  const tx = solanaWeb3.Transaction.from(
+    Uint8Array.from(atob(swapTx.swapTransaction), c=>c.charCodeAt(0))
+  );
 
-    const signed = await window.solana.signTransaction(tx);
-    const sig = await connection.sendRawTransaction(signed.serialize());
+  const signed = await window.solana.signTransaction(tx);
+  const sig = await connection.sendRawTransaction(signed.serialize());
 
-    alert("✅ Swap success: " + sig);
+  alert("Swap success: " + sig);
 
-    closeSwap();
-
-  }catch(e){
-    alert("❌ Swap failed");
-  }
+  saveSwap(amount);
+  closeSwap();
 }
 </script>
 

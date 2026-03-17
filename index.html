@@ -23,6 +23,7 @@ body{
 .wallet{
   font-size:14px;
   opacity:0.7;
+  cursor:pointer;
 }
 
 .balance{
@@ -69,6 +70,23 @@ body{
   justify-content:space-around;
   padding:10px;
 }
+
+/* MODAL */
+.modal{
+  display:none;
+  position:fixed;
+  inset:0;
+  background:#000a;
+}
+
+.modal-content{
+  position:absolute;
+  bottom:0;
+  width:100%;
+  background:#1a1a1d;
+  border-radius:20px 20px 0 0;
+  padding:20px;
+}
 </style>
 </head>
 
@@ -93,6 +111,47 @@ body{
   <div>🔄</div>
   <div>⚡</div>
   <div>🌐</div>
+</div>
+
+<!-- SWAP MODAL -->
+<div id="swapModal" class="modal">
+  <div class="modal-content">
+    <h3>Swap</h3>
+
+    <div>
+      <div>From (SOL)</div>
+      <input id="amount" type="number" placeholder="0.0"
+        style="width:100%; padding:10px; border-radius:10px;">
+    </div>
+
+    <br>
+
+    <div>
+      <div>To (USDC)</div>
+      <div style="opacity:0.7;">Auto</div>
+    </div>
+
+    <br>
+
+    <button onclick="executeSwap()" style="
+      width:100%;
+      padding:15px;
+      background:#6c4cff;
+      border:none;
+      border-radius:20px;
+      color:white;
+    ">Swap Now</button>
+
+    <button onclick="closeSwap()" style="
+      width:100%;
+      padding:10px;
+      margin-top:10px;
+      background:#333;
+      border:none;
+      border-radius:20px;
+      color:white;
+    ">Cancel</button>
+  </div>
 </div>
 
 <script>
@@ -129,7 +188,7 @@ async function connect(){
   loadAll();
 }
 
-// LOAD ALL
+// LOAD
 async function loadAll(){
   const lamports = await connection.getBalance(wallet);
   const sol = lamports / 1e9;
@@ -186,7 +245,37 @@ async function loadTokens(){
 
 // SEND
 async function send(){
-  alert("Use send logic (already working before)");
+  if(!wallet){
+    alert("Connect first");
+    return;
+  }
+
+  const to = prompt("Recipient address:");
+  const amount = parseFloat(prompt("Amount SOL:"));
+
+  if(!to || !amount) return;
+
+  try{
+    const tx = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: wallet,
+        toPubkey: new PublicKey(to),
+        lamports: amount * 1e9
+      })
+    );
+
+    tx.feePayer = wallet;
+    tx.recentBlockhash =
+      (await connection.getLatestBlockhash()).blockhash;
+
+    const signed = await window.solana.signTransaction(tx);
+    const sig = await connection.sendRawTransaction(signed.serialize());
+
+    alert("✅ Sent: " + sig);
+
+  }catch(e){
+    alert("❌ Send failed");
+  }
 }
 
 // RECEIVE
@@ -198,9 +287,56 @@ function receive(){
   alert(wallet.toString());
 }
 
-// SWAP (DEX)
-async function swap(){
-  alert("Swap ready, but UI dipisah biar tidak rusak");
+// SWAP UI
+function swap(){
+  if(!wallet){
+    alert("Connect first");
+    return;
+  }
+  document.getElementById("swapModal").style.display = "block";
+}
+
+function closeSwap(){
+  document.getElementById("swapModal").style.display = "none";
+}
+
+// SWAP EXECUTE
+async function executeSwap(){
+  const amount = parseFloat(document.getElementById("amount").value);
+  if(!amount) return alert("Enter amount");
+
+  try{
+    const quote = await fetch(
+      `https://quote-api.jup.ag/v6/quote?inputMint=So11111111111111111111111111111111111111112&outputMint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGk5rX2hP&amount=${amount*1e9}&slippageBps=50`
+    ).then(r=>r.json());
+
+    const swapTx = await fetch(
+      "https://quote-api.jup.ag/v6/swap",
+      {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body:JSON.stringify({
+          quoteResponse: quote,
+          userPublicKey: wallet.toString(),
+          wrapAndUnwrapSol:true
+        })
+      }
+    ).then(r=>r.json());
+
+    const tx = solanaWeb3.Transaction.from(
+      Uint8Array.from(atob(swapTx.swapTransaction), c=>c.charCodeAt(0))
+    );
+
+    const signed = await window.solana.signTransaction(tx);
+    const sig = await connection.sendRawTransaction(signed.serialize());
+
+    alert("✅ Swap success: " + sig);
+
+    closeSwap();
+
+  }catch(e){
+    alert("❌ Swap failed");
+  }
 }
 </script>
 

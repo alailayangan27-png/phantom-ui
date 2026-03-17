@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phantom Clone Ultimate</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@solana/web3.js@latest/lib/index.iife.min.js"></script>
+
+<style>
+body {
+  margin:0;
+  font-family:-apple-system;
+  background:#0c0c0c;
+  color:white;
+}
+
+/* HEADER */
+.header {
+  padding:20px;
+  background:linear-gradient(180deg,#1c3f33,#0c0c0c);
+  text-align:center;
+}
+
+.wallet {
+  font-size:14px;
+  opacity:0.7;
+}
+
+.balance {
+  font-size:42px;
+  font-weight:600;
+  margin-top:10px;
+  transition:0.3s;
+}
+
+/* BUTTONS */
+.actions {
+  display:flex;
+  justify-content:space-around;
+  padding:20px;
+}
+
+.btn {
+  background:linear-gradient(90deg,#5f2eea,#8a63ff);
+  padding:12px 20px;
+  border-radius:25px;
+  font-weight:500;
+  transition:0.2s;
+}
+
+.btn:active {
+  transform:scale(0.95);
+}
+
+/* TOKEN LIST */
+.tokens {
+  padding:10px;
+}
+
+.token {
+  background:#1c1c1f;
+  margin:10px;
+  padding:15px;
+  border-radius:15px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  animation:fadeIn 0.5s ease;
+}
+
+.token-left {
+  display:flex;
+  align-items:center;
+}
+
+.token img {
+  width:35px;
+  margin-right:10px;
+}
+
+.token-name {
+  font-size:15px;
+}
+
+.token-sub {
+  font-size:12px;
+  opacity:0.6;
+}
+
+/* NAV */
+.nav {
+  position:fixed;
+  bottom:0;
+  width:100%;
+  background:#1c1c1f;
+  display:flex;
+  justify-content:space-around;
+  padding:10px;
+}
+
+.nav div {
+  opacity:0.5;
+}
+
+/* ANIMASI */
+@keyframes fadeIn {
+  from {opacity:0; transform:translateY(10px);}
+  to {opacity:1; transform:translateY(0);}
+}
+</style>
+</head>
+
+<body>
+
+<div class="header">
+  <div class="wallet" id="wallet">Not Connected</div>
+  <div class="balance" id="balance">$0.00</div>
+</div>
+
+<div class="actions">
+  <div class="btn" onclick="connect()">Connect</div>
+  <div class="btn">Send</div>
+  <div class="btn">Buy</div>
+</div>
+
+<div class="tokens" id="tokens"></div>
+
+<div class="nav">
+  <div>💰</div>
+  <div>📊</div>
+  <div>🔄</div>
+  <div>⚡</div>
+  <div>🌐</div>
+</div>
+
+<script>
+const { Connection, PublicKey } = solanaWeb3;
+const connection = new Connection("https://api.mainnet-beta.solana.com");
+
+let wallet = null;
+
+async function connect(){
+  if (!window.solana) {
+    alert("Buka di browser Phantom bro 🔥");
+    return;
+  }
+
+  try {
+    const resp = await window.solana.connect();
+    wallet = resp.publicKey;
+
+    document.getElementById("wallet").innerText =
+      wallet.toString().slice(0,4)+"..."+wallet.toString().slice(-4);
+
+    loadData();
+  } catch(e){
+    console.log(e);
+  }
+}
+
+async function loadData(){
+  if(!wallet) return;
+
+  // ambil saldo SOL
+  const lamports = await connection.getBalance(wallet);
+  const sol = lamports / 1e9;
+
+  // harga SOL
+  const price = await fetch(
+    "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd"
+  ).then(r=>r.json());
+
+  const solPrice = price.solana.usd;
+  const total = sol * solPrice;
+
+  let html = `
+    <div class="token">
+      <div class="token-left">
+        <img src="https://cryptologos.cc/logos/solana-sol-logo.png">
+        <div>
+          <div class="token-name">Solana</div>
+          <div class="token-sub">${sol.toFixed(3)} SOL</div>
+        </div>
+      </div>
+      <div>$${(sol*solPrice).toFixed(2)}</div>
+    </div>
+  `;
+
+  // ambil token SPL
+  const tokens = await connection.getParsedTokenAccountsByOwner(wallet,{
+    programId: new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
+  });
+
+  tokens.value.forEach(t=>{
+    const info = t.account.data.parsed.info;
+    const amount = info.tokenAmount.uiAmount;
+
+    if(amount > 0){
+      html += `
+      <div class="token">
+        <div class="token-left">
+          <img src="https://via.placeholder.com/40">
+          <div>
+            <div class="token-name">${info.mint.slice(0,6)}...</div>
+            <div class="token-sub">${amount}</div>
+          </div>
+        </div>
+        <div>-</div>
+      </div>
+      `;
+    }
+  });
+
+  document.getElementById("tokens").innerHTML = html;
+  document.getElementById("balance").innerText =
+    "$" + total.toFixed(2);
+}
+
+// auto refresh
+setInterval(loadData,10000);
+</script>
+
+</body>
+</html>
